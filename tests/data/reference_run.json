@@ -1,0 +1,275 @@
+{
+  "dynamic_approaching": {
+    "footprint_cells": 80,
+    "missed_footprint_fraction": 0.75,
+    "moving_detected_cells": 0,
+    "moving_extent_along": 1.2,
+    "moving_occupied_cells": 15,
+    "moving_peak_returns_per_cell": 2,
+    "moving_stale_cells": 15,
+    "moving_unknown_footprint_cells": 20,
+    "parked_extent_along": 1.0000000000000024,
+    "parked_occupied_cells": 20,
+    "region_cells": 1276,
+    "smear_length": 0.1999999999999975,
+    "swept_distance": 9.6
+  },
+  "dynamic_crossing": {
+    "footprint_cells": 80,
+    "missed_footprint_fraction": 0.9875,
+    "moving_detected_cells": 0,
+    "moving_extent_along": 1.0000000000000007,
+    "moving_occupied_cells": 4,
+    "moving_peak_returns_per_cell": 5,
+    "moving_stale_cells": 4,
+    "moving_unknown_footprint_cells": 1,
+    "parked_extent_along": 1.8000000000000014,
+    "parked_occupied_cells": 17,
+    "region_cells": 1596,
+    "smear_length": -0.8000000000000007,
+    "swept_distance": 12.8
+  },
+  "dynamic_receding": {
+    "footprint_cells": 80,
+    "missed_footprint_fraction": 0.0,
+    "moving_detected_cells": 8,
+    "moving_extent_along": 1.2,
+    "moving_occupied_cells": 15,
+    "moving_peak_returns_per_cell": 3,
+    "moving_stale_cells": 7,
+    "moving_unknown_footprint_cells": 72,
+    "parked_extent_along": 0.7999999999999978,
+    "parked_occupied_cells": 14,
+    "region_cells": 1276,
+    "smear_length": 0.40000000000000213,
+    "swept_distance": 9.6
+  },
+  "enclosed_room": {
+    "agreement": {
+      "decided_fraction": 1.0,
+      "free_agreement": 1.0,
+      "free_called_occupied": 0,
+      "occupied_agreement": 1.0,
+      "occupied_called_free": 0
+    },
+    "grid_cells": 2116,
+    "lossless_resamples": 0,
+    "observed_cells": 1681,
+    "resamples": 0,
+    "sharpness": {
+      "band_cells": 456,
+      "clamped_fraction": 1.0,
+      "edge_contrast": 1.2837278843156652
+    },
+    "states": {
+      "free": 1521,
+      "occupied": 160,
+      "unknown": 435
+    },
+    "totals": {
+      "beams": 18720,
+      "cell_visits": 556556,
+      "dropped": 0,
+      "hits": 18720,
+      "max_range_beams": 0,
+      "placed_returns": 18720,
+      "scans": 13
+    }
+  },
+  "urban_block_ego_bilinear": {
+    "agreement": {
+      "decided_fraction": 0.9448252862489347,
+      "free_agreement": 0.9960298554867397,
+      "free_called_occupied": 100,
+      "occupied_agreement": 0.9225806451612903,
+      "occupied_called_free": 24
+    },
+    "grid_cells": 40000,
+    "lossless_resamples": 0,
+    "observed_cells": 26987,
+    "resamples": 50,
+    "sharpness": {
+      "band_cells": 1287,
+      "clamped_fraction": 0.8036091451439582,
+      "edge_contrast": 1.1804489031832242
+    },
+    "states": {
+      "free": 25223,
+      "occupied": 583,
+      "unknown": 14194
+    },
+    "totals": {
+      "beams": 35976,
+      "cell_visits": 3243799,
+      "dropped": 744,
+      "hits": 24277,
+      "max_range_beams": 11699,
+      "placed_returns": 22941,
+      "scans": 51
+    }
+  },
+  "urban_block_ego_nearest": {
+    "agreement": {
+      "decided_fraction": 0.9463815911364731,
+      "free_agreement": 0.9954221567612754,
+      "free_called_occupied": 115,
+      "occupied_agreement": 0.60381861575179,
+      "occupied_called_free": 166
+    },
+    "grid_cells": 40000,
+    "lossless_resamples": 0,
+    "observed_cells": 26987,
+    "resamples": 50,
+    "sharpness": {
+      "band_cells": 1287,
+      "clamped_fraction": 0.8091673768851669,
+      "edge_contrast": 1.1740901515416031
+    },
+    "states": {
+      "free": 25172,
+      "occupied": 368,
+      "unknown": 14460
+    },
+    "totals": {
+      "beams": 35976,
+      "cell_visits": 3243799,
+      "dropped": 744,
+      "hits": 24277,
+      "max_range_beams": 11699,
+      "placed_returns": 22941,
+      "scans": 51
+    }
+  },
+  "urban_block_ego_snap": {
+    "agreement": {
+      "decided_fraction": 0.951575739557009,
+      "free_agreement": 0.9907370754492915,
+      "free_called_occupied": 234,
+      "occupied_agreement": 0.9883381924198251,
+      "occupied_called_free": 4
+    },
+    "grid_cells": 40000,
+    "lossless_resamples": 50,
+    "observed_cells": 26908,
+    "resamples": 50,
+    "sharpness": {
+      "band_cells": 1251,
+      "clamped_fraction": 0.8223948268173034,
+      "edge_contrast": 1.6143018060681702
+    },
+    "states": {
+      "free": 25032,
+      "occupied": 573,
+      "unknown": 14395
+    },
+    "totals": {
+      "beams": 35976,
+      "cell_visits": 3243561,
+      "dropped": 744,
+      "hits": 24277,
+      "max_range_beams": 11699,
+      "placed_returns": 22947,
+      "scans": 51
+    }
+  },
+  "urban_block_threshold_sweep": [
+    {
+      "decided_fraction": 0.9986190180936813,
+      "decision_prob": 0.55,
+      "free_agreement": 0.9852716088601381,
+      "occupied_agreement": 0.9813895781637717
+    },
+    {
+      "decided_fraction": 0.9840764331210191,
+      "decision_prob": 0.62,
+      "free_agreement": 0.9860838484750828,
+      "occupied_agreement": 0.9910714285714286
+    },
+    {
+      "decided_fraction": 0.9831463840820698,
+      "decision_prob": 0.65,
+      "free_agreement": 0.9865403788634097,
+      "occupied_agreement": 0.9923273657289002
+    },
+    {
+      "decided_fraction": 0.9818781353925934,
+      "decision_prob": 0.68,
+      "free_agreement": 0.9871392077986905,
+      "occupied_agreement": 0.9923273657289002
+    },
+    {
+      "decided_fraction": 0.9678992165041429,
+      "decision_prob": 0.72,
+      "free_agreement": 0.9871569997324375,
+      "occupied_agreement": 0.9943342776203966
+    },
+    {
+      "decided_fraction": 0.9533848148356914,
+      "decision_prob": 0.78,
+      "free_agreement": 0.9883464662017329,
+      "occupied_agreement": 0.9957446808510638
+    },
+    {
+      "decided_fraction": 0.9510737838904233,
+      "decision_prob": 0.82,
+      "free_agreement": 0.989593417231365,
+      "occupied_agreement": 0.9956521739130435
+    },
+    {
+      "decided_fraction": 0.9379967307367115,
+      "decision_prob": 0.86,
+      "free_agreement": 0.9897687241537755,
+      "occupied_agreement": 0.9952904238618524
+    }
+  ],
+  "urban_block_tolerance_sweep": [
+    {
+      "occupied_agreement": 0.9923273657289002,
+      "spatial_tolerance": 0
+    },
+    {
+      "occupied_agreement": 0.9948849104859335,
+      "spatial_tolerance": 1
+    },
+    {
+      "occupied_agreement": 0.9974424552429667,
+      "spatial_tolerance": 2
+    },
+    {
+      "occupied_agreement": 0.9987212276214834,
+      "spatial_tolerance": 3
+    }
+  ],
+  "urban_block_world": {
+    "agreement": {
+      "decided_fraction": 0.9831463840820698,
+      "free_agreement": 0.9865403788634097,
+      "free_called_occupied": 459,
+      "occupied_agreement": 0.9923273657289002,
+      "occupied_called_free": 6
+    },
+    "grid_cells": 60000,
+    "lossless_resamples": 0,
+    "observed_cells": 35482,
+    "resamples": 0,
+    "sharpness": {
+      "band_cells": 2960,
+      "clamped_fraction": 0.9271179753114255,
+      "edge_contrast": 1.4808293532006855
+    },
+    "states": {
+      "free": 33649,
+      "occupied": 1235,
+      "unknown": 25116
+    },
+    "totals": {
+      "beams": 35976,
+      "cell_visits": 3135805,
+      "dropped": 744,
+      "hits": 24277,
+      "max_range_beams": 11699,
+      "placed_returns": 24277,
+      "scans": 51
+    }
+  }
+}
