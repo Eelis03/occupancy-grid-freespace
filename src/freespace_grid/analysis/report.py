@@ -79,6 +79,7 @@ def smear_table(reports: Sequence[SmearReport], *, label_header: str = "case") -
         "found",
         "unknown",
         "called free",
+        "parked finds",
         "peak returns",
     ]
     rows = [
@@ -95,6 +96,7 @@ def smear_table(reports: Sequence[SmearReport], *, label_header: str = "case") -
             f"{report.moving.detected_cells:d}",
             f"{report.moving.unknown_footprint_cells:d}",
             f"{report.moving.false_free_cells:d}",
+            f"{report.parked.detected_cells:d}",
             f"{report.moving.peak_returns_per_cell:d}",
         ]
         for report in reports

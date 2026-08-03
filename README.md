@@ -1,98 +1,166 @@
 # Occupancy Grid Freespace
 
-Bird's-eye-view free space estimation from simulated lidar using an inverse sensor model.
+Bird's-eye-view free space estimation from simulated lidar using an inverse sensor model,
+built to measure where the model breaks rather than only where it works.
 
 [![CI](https://github.com/Eelis03/occupancy-grid-freespace/actions/workflows/ci.yml/badge.svg)](https://github.com/Eelis03/occupancy-grid-freespace/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-## Overview
+![Accumulated grid with the moving obstacle missing entirely, its footprint cells marked free space, beside a parked control in which the same disc is found and shadows the ground behind it](docs/figures/dynamic_obstacle.png)
 
-A planar occupancy grid mapper: it turns lidar sweeps taken at known poses into a
-bird's-eye-view map that labels every cell free, occupied, or unknown, and it scores
-that map against the ground truth of the scene it was built from. The intended reader
-is someone deciding how to feed free space to a planner, who needs to know not only
-how the inverse sensor model is defined but where it breaks, by how much, and which
-parameter controls the trade. The simulator, the mapper, the metrics, and the failure
-measurements are all in this repository, so every number below can be reproduced by
-one command.
+## A moving obstacle is missed, not smeared
 
-## Problem
+The usual complaint about a static world assumption is that a moving object leaves a
+smear. That is not the dominant failure here, and the figure above is the measurement.
+Both panels are the same disc of radius 1 metre, the same sensor, the same seed, the same
+41 sweeps. On the left it is parked where the moving one ends up, and the map finds it and
+shadows the ground behind it. On the right it approached that spot at 1.2 metres per
+second, and the map has drawn it where it was several seconds ago and calls the ground it
+is standing on free space. A planner reading the right hand panel drives into it.
 
-A vehicle carries a planar lidar. At each of a sequence of known poses the sensor
-returns one range per beam. From that stream, decide for every cell of a grid fixed to
-the ground whether the cell is free, occupied, or not yet determined.
+From `uv run python examples/dynamic_smear.py`, with a stationary sensor so that nothing
+in the table is caused by the sensor's own motion:
 
-Four things make this harder than accumulating hit counts.
+```
+case         swept (m)  parked (m)  moving (m)  smear (m)  smear/swept  stale cells  stale (m2)  footprint  found  unknown  called free  parked finds  peak returns
+-----------  ---------  ----------  ----------  ---------  -----------  -----------  ----------  ---------  -----  -------  -----------  ------------  ------------
+approaching  9.60       1.00        1.20        0.20       0.021        15           0.60        80         0      20       60           12            2
+receding     9.60       0.80        1.20        0.40       0.042        7            0.28        80         8      72       0            8             3
+crossing     12.80      1.80        1.00        -0.80      -0.063       4            0.16        80         0      1        79           10            5
+```
 
-1. A beam carries two kinds of evidence at once. It says the cells it passed through
-   were empty, and it says the cell it stopped in was not. Those are different claims
-   about different cells and they have to be applied separately.
-2. A beam that returns nothing carries only the first kind. It certifies free space
-   out to the range limit and says nothing whatever about the cell at the limit.
-   Treating that cell as occupied paints a wall on the sensor horizon; discarding the
-   beam throws away the free space evidence that matters most, because unreturned
-   beams are the ones that crossed open ground. In the run reported below, 11699 of
-   35976 beams reach the range limit, so this is a third of the evidence.
-3. Occupied cells are not observable in the same way as free cells. A beam terminates
-   on the near surface of an obstacle and cannot see through it, so the interior of a
-   solid object is never measured and can only ever be reported unknown. Any score
-   that treats unknown as a mistake will therefore be dominated by the scene rather
-   than by the mapper.
-4. The world moves and the filter assumes it does not. The evidence a moving object
-   deposits stays where the object was, and the evidence it removes stays removed.
+The smear is 0.20 to 0.40 metres, 2 to 4 percent of the distance travelled. The miss is
+total: of the 80 cells of the obstacle's true final footprint, the approaching case finds
+0 and calls 60 free, and the crossing case finds 0 and calls 79 free.
 
-The output is judged on three numbers, not one. What fraction of the scored cells the
-map is prepared to decide, what fraction of the truly free decided cells it calls
-free, and what fraction of the truly occupied decided cells it calls occupied. Any one
-of them can be driven to an arbitrary value by moving the decision threshold, so the
-Results section reports a sweep rather than a point.
+The arithmetic says why. The accumulated log odds are clamped at probabilities 0.12 and
+0.97, the defaults published with octomap, and those two bounds fix two constants that
+decide almost everything the filter does: one occupied observation is undone by 2.09 free
+observations, and a cell already saturated at the free clamp needs 3.08 consecutive
+occupied observations before it can be called occupied. The `peak returns` column is the
+largest number of range returns any single cell in the region received over the whole run.
+In the approaching case it is 2. The obstacle never had the evidence to overturn ground
+the filter had already decided was empty.
 
-## Approach
+The crossing case does reach 5, more than the 3.08 needed, and cells along its path were
+called occupied while the disc stood over them. They do not survive. Lateral motion
+carries the trail out of the obstacle's own shadow, later sweeps see straight through it,
+2.09 free observations undo each occupied one, and 4 stale cells are left at the end. The
+map is not smearing the obstacle so much as running behind it.
 
-The map stores one number per cell, the log odds of occupancy. This is the
-construction of Moravec and Elfes as presented by Thrun, Burgard and Fox: rather than
-inverting the forward sensor model, the inverse model is written down directly, with
-the cells a beam passed through assigned a probability below the prior and the cell in
-which the beam terminated assigned one above it. In log odds each observation becomes
-an addition, so a whole sweep reduces to a sparse array of increments, and the
-posterior is recovered by a logistic transform when it is needed.
+The receding case looks better than it is. It calls nothing free, but only because its
+final footprint spent the whole run inside the obstacle's own shadow and accumulated no
+free evidence to be wrong about: 72 of its 80 cells are reported unknown. Unknown is the
+safe failure, since a planner that treats unknown as impassable is not endangered by it,
+but it is not a detection either.
 
-Three decisions fix the behaviour of the filter.
+## One parameter controls both failures
 
-The occupied increment is applied only where the beam carries a range return.
-`is_hit` is a per-beam flag from the simulator, and a beam at the range limit
-contributes the free increment along its whole traversal, including the terminal cell,
-and no occupied increment anywhere.
+The smear and the miss are two ends of the free clamp. Sweeping it on the approaching
+case, everything else held fixed, from the same command:
 
-Cells are traversed by the digital differential analyser of Amanatides and Woo, which
-tracks the parameter at which the next vertical and the next horizontal grid line are
-met and repeatedly steps whichever comes first. It visits every cell the segment
-enters, which a Bresenham line does not: Bresenham skips cells at shallow crossings and
-would leave holes in the free space. The implementation loops over steps rather than
-over rays, so a 720 beam sweep costs a few hundred array operations rather than 720
-Python iterations. Where a ray passes exactly through a grid corner the traversal steps
-x and then y, visiting the horizontally adjacent cell, because cutting the corner would
-let free space leak diagonally through a wall one cell thick.
+```
+clamp  occ obs needed  smear (m)  stale (m2)  found  unknown  called free  parked finds
+-----  --------------  ---------  ----------  -----  -------  -----------  ------------
+0.05   4.21            0.20       0.60        0      0        80           12
+0.12   3.08            0.20       0.60        0      20       60           12
+0.20   2.37            0.20       0.60        0      80       0            12
+0.28   1.85            9.00       3.24        20     60       0            12
+0.34   1.51            9.00       3.44        22     58       0            12
+```
 
-The accumulated log odds are clamped, asymmetrically, at probabilities 0.12 and 0.97,
-the defaults published with octomap by Hornung and colleagues. Without a clamp a cell
-observed free a thousand times needs a thousand contrary observations before it can be
-believed occupied. With this clamp, one occupied observation is undone by 2.09 free
-observations and a fully saturated free cell needs 3.08 occupied observations before it
-is called occupied. Those two constants are not incidental: they are what the dynamic
-obstacle study measures, and the second of them turns out to decide whether a moving
-car appears in the map at all.
+At a clamp of 0.05 the filter is so certain the corridor is empty that all 80 footprint
+cells are still called free with the obstacle standing in them. Loosening it converts
+those cells first to unknown and then, once one or two occupied observations suffice, to
+found. The bill arrives at exactly that point: at 0.28 the map grows a 9.00 metre streak
+of stale occupancy behind the obstacle, 94 percent of the 9.60 metres it travelled,
+together with 3.24 square metres of ground wrongly held occupied. The streak survives
+because an approaching obstacle occludes the cells it has just left, so no later beam ever
+contradicts them. It is absent from the receding case at every clamp, because there the
+trail lies between the sensor and the obstacle and is corrected on the next sweep.
 
-A grid that follows the vehicle has to be re-anchored every frame. Three policies are
+No row of that sweep gives both a found obstacle and no streak. The trade is not an
+artefact of poor tuning, and it is not a threshold that a careful engineer could place
+better.
+
+Two ceilings bound what any setting could ever buy. The `parked finds` column is 12 at
+every clamp: a stationary disc of 80 footprint cells yields 12 of them to a lidar, because
+a beam stops at the near surface and the interior and far side are never measured. The
+moving runs reach 22 at the loosest clamps, slightly more than the parked control, because
+the obstacle's motion sweeps its near surface across a thicker band before it stops. Under
+no setting is the other 58 recoverable by a filter, however it is tuned. Removing the
+failure needs a filter that models motion instead of assuming its absence, which this one
+deliberately does not; `docs/design-notes.md` names the three ways of doing that and what
+each would cost.
+
+## The filter underneath
+
+The map holds one number per cell, the log odds of occupancy. This is the construction of
+Moravec and Elfes as presented by Thrun, Burgard and Fox: rather than inverting the
+forward sensor model, the inverse model is written down directly, with the cells a beam
+passed through assigned a probability below the prior and the cell the beam terminated in
+assigned one above it. In log odds each observation is an addition, so a whole sweep
+reduces to a sparse array of increments and the posterior is recovered by a logistic
+transform only when it is needed.
+
+Three decisions fix its behaviour.
+
+**The occupied increment is applied only where a beam carries a range return.** A beam
+that returns nothing certifies free space out to the range limit and says nothing whatever
+about the cell at the limit. Treating that cell as occupied paints a wall on the sensor
+horizon; discarding the beam throws away the free space evidence that matters most,
+because unreturned beams are the ones that crossed open ground. In the run reported below,
+11699 of 35976 beams reach the limit, so this is a third of all the evidence in the map.
+The two cases differ in exactly one cell:
+
+```python
+import numpy as np
+
+from freespace_grid import GridSpec, scan_update
+
+spec = GridSpec(resolution=1.0, rows=21, cols=21, origin_x=-10.5, origin_y=-10.5)
+endpoint = np.array([[6.2, 0.0]])
+
+with_return = scan_update(spec, np.zeros(2), endpoint, np.array([True]))
+at_limit = scan_update(spec, np.zeros(2), endpoint, np.array([False]))
+
+print(with_return.free_cells.shape[0], with_return.occupied_cells.shape[0])
+# 6 1
+print(at_limit.free_cells.shape[0], at_limit.occupied_cells.shape[0])
+# 7 0
+```
+
+**Cells are enumerated by the digital differential analyser of Amanatides and Woo.** It
+visits every cell the segment enters, which a Bresenham line does not: Bresenham skips
+cells at shallow crossings and would leave holes in the free space. The implementation
+loops over steps and vectorises over rays, so a 720 beam sweep costs a few hundred array
+operations rather than 720 Python iterations. Where a ray passes exactly through a grid
+corner the traversal steps x and then y, visiting the horizontally adjacent cell, because
+cutting the corner would let free space leak diagonally through a wall one cell thick.
+
+**A grid that follows the vehicle is re-anchored by whole cells.** Three policies are
 implemented and compared: snapping the window origin to whole cells, which makes every
 shift an exact array translation, and centring the window exactly on the vehicle with
 either bilinear or nearest neighbour resampling. Interpolation is applied to log odds
-rather than to probability, because log odds is the additive coordinate of the filter,
-so a linear blend of log odds is a geometric mean of odds and leaves the prior fixed.
+rather than to probability, because log odds is the additive coordinate of the filter, so
+a linear blend of log odds is a geometric mean of odds and leaves the prior fixed.
 
-`docs/design-notes.md` records the alternatives that were rejected and the conditions
-under which this implementation gives poor results.
+Building and scoring a map is one call each:
+
+```python
+from freespace_grid import run_mapping, score_grid, urban_block
+
+scenario = urban_block()
+trace = run_mapping(scenario)
+agreement = score_grid(trace.grid, trace.truth, scenario.model, region=trace.observed_mask)
+
+print(len(trace.steps), trace.totals()["max_range_beams"])
+# 51 11699
+print(round(agreement.decided_fraction, 4), round(agreement.free_agreement, 4),
+      round(agreement.occupied_agreement, 4))
+# 0.9831 0.9865 0.9923
+```
 
 ## Installation
 
@@ -112,82 +180,57 @@ python -m venv .venv
 pip install -e ".[dev]"
 ```
 
-## Usage
+## Reproducing every number here
 
-Build a map of the bundled street block scenario and score it against ground truth:
-
-```python
-from freespace_grid import run_mapping, score_grid, urban_block
-
-scenario = urban_block()
-trace = run_mapping(scenario)
-agreement = score_grid(trace.grid, trace.truth, scenario.model, region=trace.observed_mask)
-
-print(len(trace.steps), trace.totals()["max_range_beams"])
-# 51 11699
-print(round(agreement.decided_fraction, 4), round(agreement.free_agreement, 4),
-      round(agreement.occupied_agreement, 4))
-# 0.9831 0.9865 0.9923
-```
-
-The maximum range case, which is the part most often got wrong, is visible directly in
-the cell sets one beam produces. The same beam is reduced twice, once as a range return
-and once as a beam that reached the range limit:
-
-```python
-import numpy as np
-
-from freespace_grid import GridSpec, scan_update
-
-spec = GridSpec(resolution=1.0, rows=21, cols=21, origin_x=-10.5, origin_y=-10.5)
-endpoint = np.array([[6.2, 0.0]])
-
-with_return = scan_update(spec, np.zeros(2), endpoint, np.array([True]))
-at_limit = scan_update(spec, np.zeros(2), endpoint, np.array([False]))
-
-print(with_return.free_cells.shape[0], with_return.occupied_cells.shape[0])
-# 6 1
-print(at_limit.free_cells.shape[0], at_limit.occupied_cells.shape[0])
-# 7 0
-```
-
-The traversal is the same in both cases. Only the terminal cell moves, from the
-occupied set to the free set.
-
-Runnable examples live in `examples/`:
+Every figure and every table below is the output of one of these six commands. Together
+they take about half a minute.
 
 ```bash
-uv run python examples/map_static_scene.py
-uv run python examples/sweep_agreement.py
-uv run python examples/compare_grid_frames.py
-uv run python examples/dynamic_smear.py
+uv run python examples/map_static_scene.py     # the static map and its scores
+uv run python examples/sweep_agreement.py      # threshold and spatial tolerance sweeps
+uv run python examples/compare_grid_frames.py  # the four ways of maintaining the grid
+uv run python examples/dynamic_smear.py        # the moving obstacle and the clamp sweep
+uv run python examples/pose_drift.py           # odometry drift and its correction
+uv run python examples/publish_figures.py      # regenerates docs/figures
 ```
 
-The first builds and scores the static map and writes a figure. The second produces the
-two sweeps. The third compares the four ways of maintaining the grid under vehicle
-motion. The fourth measures what a moving obstacle does to a filter that assumes a
-static world. Each accepts `--steps` to shorten the run, and the three that write
-figures accept `--outdir` and `--no-figure`.
+Each accepts `--steps` to shorten the run, and the ones that draw accept `--outdir` and,
+except for `publish_figures.py`, `--no-figure`.
+
+The three images in `docs/figures` are snapshots, not build artefacts. `uv run python
+examples/publish_figures.py` regenerates all three in place and prints their sizes: they
+total 73.6 KiB against a budget of 250 KiB, which is why they can be tracked at all. Each
+is a flat colour decision map, so a modest resolution loses nothing and no compression
+dependency is needed. CI does not compare them
+byte for byte: matplotlib renders text through whatever font stack the machine provides
+and its PNG output is not reproducible across platforms, so a byte comparison would fail
+on one of the two runners for a reason that has nothing to do with this code. The test
+suite asserts instead that the three files exist, that nothing else has crept into the
+directory, and that the total stays inside the budget.
+
+The numbers were produced on Python 3.12.10 with numpy 2.5.1, scipy 1.18.0 and matplotlib
+3.11.1, on one core of an AMD64 desktop under Windows 11. Every run is seeded.
 
 ## Results
 
-All numbers below are the output of the commands shown, on Python 3.12.10 with numpy
-2.5.1, scipy 1.18.0 and matplotlib 3.11.1, on one core of an AMD64 desktop under
-Windows 11. Every run is seeded, and the four scripts together take about ten seconds.
+The `urban_block` scenario is a 60 by 40 metre street block mapped at 0.2 metres per cell,
+so the grid is 200 by 300 cells. Five building footprints bound a twelve metre corridor,
+with two parked vehicles, two poles, a bin and a planter near its edges. The vehicle
+drives the corridor end to end at 4.7 metres per second over 51 sweeps, along a straight
+section, a right hand arc, a left hand arc and a second straight section. The sensor is a
+360 degree planar lidar with 720 beams, a 30 metre range limit, 0.03 metre Gaussian range
+noise and a 2 percent beam dropout rate. The filter uses free and occupied probabilities
+of 0.4 and 0.7, clamps at 0.12 and 0.97, and a decision threshold of 0.65.
 
-### Configuration
+A map is judged on three numbers, not one: what fraction of the scored cells it is
+prepared to decide, what fraction of the truly free decided cells it calls free, and what
+fraction of the truly occupied decided cells it calls occupied. Any one of them can be
+driven to an arbitrary value by moving the threshold, so a sweep is reported rather than a
+point.
 
-The `urban_block` scenario is a 60 by 40 metre street block mapped at 0.2 metres per
-cell, so the grid is 200 by 300 cells. Five building footprints bound a twelve metre
-corridor, with two parked vehicles, two poles, a bin and a planter near its edges. The
-vehicle drives the corridor end to end at 4.7 metres per second over 51 sweeps, along a
-straight section, a right hand arc, a left hand arc and a second straight section. The
-sensor is a 360 degree planar lidar with 720 beams, a 30 metre range limit, 0.03 metre
-Gaussian range noise and a 2 percent beam dropout rate. The filter uses free and
-occupied probabilities of 0.4 and 0.7, clamps at 0.12 and 0.97, and a decision
-threshold of 0.65.
+### The static map
 
-### Static scene
+![Decision map of the street block, with the free corridor in white and mapped surfaces in black, showing that the grey unknown region covering every building interior and the ground behind it is larger than the mapped part of the scene](docs/figures/urban_block_map.png)
 
 From `uv run python examples/map_static_scene.py`:
 
@@ -208,17 +251,16 @@ observed    35482  0.9831   0.9865    0.9923   0.9894
 whole grid  60000  0.5814   0.9865    0.9923   0.9894
 ```
 
-The two regions answer two different questions. Over the 35482 cells at least one beam
-reached, the map decides 98.31 percent and is right about 98.65 percent of the free
-ones and 99.23 percent of the occupied ones. Over the whole grid the decided fraction
-falls to 58.14 percent, and that difference is coverage, not error: the missing 24518
-cells are building interiors and the ground behind them, which no beam can reach from
-the corridor. Reporting only the second number would understate the mapper and
-reporting only the first would hide how much of the scene it never saw.
+The two regions answer two different questions, and the figure is why both have to be
+reported. Over the 35482 cells at least one beam reached, the map decides 98.31 percent
+and is right about 98.65 percent of the free ones and 99.23 percent of the occupied ones.
+Over the whole grid the decided fraction falls to 58.14 percent. That difference is
+coverage, not error: the missing 24518 cells are the grey blocks in the figure, building
+interiors and the ground behind them, which no beam can reach from the corridor.
 
-### Decision threshold sweep
+### The decision threshold, and how little it buys
 
-From `uv run python examples/sweep_agreement.py`, scored over the observed region:
+Scored over the observed region, from `uv run python examples/sweep_agreement.py`:
 
 ```
 threshold  decided  free agr  occ agr  balanced  free as occ  occ as free
@@ -233,16 +275,16 @@ threshold  decided  free agr  occ agr  balanced  free as occ  occ as free
 0.86       0.9380   0.9898    0.9953   0.9925    334          3
 ```
 
-The trade is visible and it is shallow: raising the threshold from 0.55 to 0.86 buys
-1.4 percentage points of occupied agreement and costs 6.1 points of coverage. That
-shallowness is itself the result, and it comes from the clamp. Most observed cells are
-pinned at one bound or the other, 92.71 percent of them, so moving the threshold inside
-the interval reclassifies only the small population in between. The sweep stops at 0.86
-because the free clamp at 0.12 puts a hard ceiling of 0.88 on any threshold that could
-ever call a cell free, and the model raises an error rather than accepting a threshold
-it can never meet.
+The trade is visible and it is shallow: raising the threshold from 0.55 to 0.86 buys 1.4
+percentage points of occupied agreement and costs 6.1 points of coverage. The shallowness
+is itself the result and it comes from the clamp. Most observed cells are pinned at one
+bound or the other, 92.71 percent of them, so moving the threshold inside the interval
+reclassifies only the small population in between. The sweep stops at 0.86 because a free
+clamp of 0.12 puts a hard ceiling of 0.88 on any threshold that could ever call a cell
+free, and `LogOddsModel` raises an error rather than accepting a threshold it can never
+meet.
 
-### Spatial tolerance on the occupied class
+### Where the occupied errors are
 
 Same command, threshold held at 0.65. A tolerance of `k` cells counts a truly occupied
 cell as agreeing when the map called some cell within `k` of it occupied:
@@ -256,22 +298,20 @@ tolerance  decided  free agr  occ agr  balanced  free as occ  occ as free
 3          0.9831   0.9865    0.9987   0.9926    459          6
 ```
 
-Only 0.26 percentage points of occupied disagreement are recovered by one cell of
-slack, so the surfaces this map places are placed in the right cell rather than one
-cell out. That is worth measuring because a one cell offset is the expected failure
-here: a range return is attributed to the cell containing the measured point while the
-ground truth labels a cell by whether its centre lies inside an obstacle, and those two
-conventions disagree whenever a surface falls near a cell boundary.
-
-The 459 free cells called occupied, 1.35 percent of the free ones, are dominated by the
-same effect at building corners, where the beam grazes the facade and the return lands
-in the first cell outside it.
+One cell of slack recovers only 0.26 percentage points, so the surfaces this map places
+are in the right cell rather than one cell out. That is worth measuring because a one cell
+offset is the expected failure here: a range return is attributed to the cell containing
+the measured point while the ground truth labels a cell by whether its centre lies inside
+an obstacle, and those two conventions disagree whenever a surface falls near a cell
+boundary. The 459 free cells called occupied, 1.35 percent of the free ones, are dominated
+by the same effect at building corners, where the beam grazes the facade and the return
+lands in the first cell outside it.
 
 ### Maintaining the grid under vehicle motion
 
-From `uv run python examples/compare_grid_frames.py`. The ego window is 200 by 200
-cells. The vehicle advances 4.7 cells per sweep, chosen so that a window centred
-exactly on it never lands on a whole cell offset:
+From `uv run python examples/compare_grid_frames.py`. The ego window is 200 by 200 cells.
+The vehicle advances 4.7 cells per sweep, chosen so that a window centred exactly on it
+never lands on a whole cell offset:
 
 ```
 policy        shifts  lossless  decided  free agr  occ agr  at clamp  edge contrast
@@ -282,109 +322,85 @@ ego bilinear  50      0         0.9448   0.9960    0.9226   0.8036    1.180
 ego nearest   50      0         0.9464   0.9954    0.6038   0.8092    1.174
 ```
 
-Snapping the window origin to whole cells makes all 50 shifts lossless copies, and
-costs 0.40 points of occupied agreement against the world fixed grid, all of it from
-cells that fell off the trailing edge of the window. Centring the window exactly on the
-vehicle costs far more. Bilinear resampling drops occupied agreement to 0.9226 and edge
-contrast from 1.614 to 1.180: each frame averages every obstacle surface with its free
-surroundings, the filters compose over 50 frames, and a wall one cell thick is spread
-until it no longer clears the decision threshold. Nearest neighbour introduces no blur,
-which its almost identical edge contrast of 1.174 does not distinguish, but it displaces
-every cell by up to half a cell every frame, and after 50 frames of that jitter only
-0.6038 of the occupied cells survive, the worst figure in the table.
+Snapping the window origin to whole cells makes all 50 shifts lossless copies and costs
+0.40 points of occupied agreement against the world fixed grid, all of it from cells that
+fell off the trailing edge. Centring the window exactly costs far more. Bilinear
+resampling drops occupied agreement to 0.9226 and edge contrast from 1.614 to 1.180: each
+frame averages every obstacle surface with its free surroundings, the filters compose over
+50 frames, and a wall one cell thick is spread until it no longer clears the threshold.
+Nearest neighbour introduces no blur, which its almost identical edge contrast of 1.174
+does not distinguish, but it displaces every cell by up to half a cell every frame, and
+after 50 frames of that jitter only 0.6038 of the occupied cells survive, the worst figure
+in the table.
 
-The lesson is not that interpolation is bad but that centring the window exactly is not
-worth what it costs. The most a snapped window is ever off centre is half a cell,
-0.1 metres here, which no consumer of the map can detect, and it buys exact arithmetic.
-Both fractional policies also raise the free agreement, to 0.9960 and 0.9954, because
-smoothing removes isolated spurious occupied cells along with the real thin ones; an
-occupancy figure that improves while the map gets worse is a good reason to report both
-classes separately.
+The lesson is not that interpolation is bad but that centring exactly is not worth what it
+costs. A snapped window is never more than half a cell off centre, 0.1 metres here, which
+no consumer of the map can detect, and it buys exact arithmetic. Both fractional policies
+also raise the free agreement, to 0.9960 and 0.9954, because smoothing removes isolated
+spurious occupied cells along with the real thin ones. An occupancy figure that improves
+while the map gets worse is a good reason to report both classes separately.
 
-### Moving obstacles under a static world assumption
+## Pose drift, and what correcting it costs
 
-From `uv run python examples/dynamic_smear.py`. A stationary sensor watches a disc of
-radius 1 metre translate through a corridor for 8 seconds over 41 sweeps, and each run
-is compared with a control in which the same disc is parked at its final position for
-the whole run. Everything else is identical, including the seed. The region of interest
-is a capsule of radius 2 metres around the path the disc travels. Holding the sensor
-still separates the effect of the obstacle's motion from the effect of the sensor's own
-motion, which the previous table already covers.
+![Two maps of the same street block section, the dead reckoned one with every wall drawn twice and displaced from the red ground truth outline, and the scan matched one with the walls back on the outline](docs/figures/pose_drift.png)
 
-```
-case         swept (m)  parked (m)  moving (m)  smear (m)  smear/swept  stale cells  stale (m2)  footprint  found  unknown  called free  peak returns
------------  ---------  ----------  ----------  ---------  -----------  -----------  ----------  ---------  -----  -------  -----------  ------------
-approaching  9.60       1.00        1.20        0.20       0.021        15           0.60        80         0      20       60           2
-receding     9.60       0.80        1.20        0.40       0.042        7            0.28        80         8      72       0            3
-crossing     12.80      1.80        1.00        -0.80      -0.063       4            0.16        80         0      1        79           5
-```
+Everything above is measured with exact poses. That was a stated limitation of this
+repository and it is now closed: `pipeline/odometry.py` corrupts the body frame motion
+between consecutive poses so the estimate handed to the mapper drifts and compounds, and
+`algorithm/scan_match.py` corrects it by correlative scan to map matching, scoring
+candidate poses by how well the sweep's range returns land on the occupied evidence the
+map already holds.
 
-`smear` is the extra extent along the direction of motion that the moving run produces
-over its parked control. `stale cells` are cells the map calls occupied that the
-obstacle no longer occupies. The last four columns split the 80 cells of the obstacle's
-true final footprint into found, unknown and wrongly cleared, and give the largest
-number of range returns any single cell in the region received over the whole run.
-
-Under the standard parameters the dominant failure is not the smear but the miss. The
-smear is 0.20 to 0.40 metres, 2 to 4 percent of the distance travelled, while in the
-approaching and crossing cases the map places no occupied cell at all on the obstacle's
-final position and calls 60 and 79 of its 80 cells free space. A planner reading this
-map would drive into the obstacle.
-
-The arithmetic explains it. Overturning a cell already saturated at the free clamp takes
-3.08 consecutive occupied observations, and the peak returns column shows that no cell in
-the approaching case ever received more than 2. The crossing case does reach 5, above
-what is needed, so cells along its path were called occupied while the obstacle stood
-over them. They do not survive: lateral motion carries the trail out of the obstacle's
-own shadow, later sweeps see straight through it, 2.09 free observations undo each
-occupied one, and 4 stale cells are left at the end. The map is not so much smearing the
-obstacle as running behind it.
-
-The receding case looks better than it is. It calls nothing free, but only because its
-final footprint spent the whole run inside the obstacle's own shadow and therefore
-accumulated no free evidence to be wrong about: 72 of the 80 cells are reported unknown.
-Unknown is the safe failure, since a planner that treats unknown as impassable is not
-endangered by it, but it is not a detection either.
-
-The smear and the miss are two ends of one parameter. Sweeping the free clamp on the
-approaching case, with everything else held fixed:
+From `uv run python examples/pose_drift.py`. Scale 1.0 is 2 percent of the distance
+travelled in translation and 0.23 degrees per metre in heading, the order of magnitude of
+wheel odometry with no inertial aiding. The same variates are drawn at every scale, so the
+rows are one accident of the seed at four amplitudes rather than four separate accidents:
 
 ```
-clamp  occ obs needed  smear (m)  stale (m2)  found  unknown  called free
------  --------------  ---------  ----------  -----  -------  -----------
-0.05   4.21            0.20       0.60        0      0        80
-0.12   3.08            0.20       0.60        0      20       60
-0.20   2.37            0.20       0.60        0      80       0
-0.28   1.85            9.00       3.24        20     60       0
-0.34   1.51            9.00       3.44        22     58       0
+scale  poses          final err (m)  peak err (m)  heading err (deg)  decided  free agr  occ agr  edge contrast
+-----  -------------  -------------  ------------  -----------------  -------  --------  -------  -------------
+exact  given          0.000          0.000         0.00               0.9831   0.9865    0.9923   1.481
+0.0    dead reckoned  0.000          0.000         0.00               0.9831   0.9865    0.9923   1.481
+0.0    matched        0.141          0.141         0.00               0.9852   0.9888    0.9517   1.226
+1.0    dead reckoned  0.880          0.880         2.25               0.9762   0.9867    0.5953   1.044
+1.0    matched        0.165          0.175         0.00               0.9850   0.9891    0.9263   1.234
+2.0    dead reckoned  1.759          1.759         4.49               0.9642   0.9867    0.4168   0.833
+2.0    matched        0.123          0.162         0.01               0.9849   0.9889    0.9577   1.229
+4.0    dead reckoned  3.515          3.515         8.98               0.9511   0.9888    0.2390   0.547
+4.0    matched        0.130          0.205         0.02               0.9851   0.9893    0.9680   1.233
 ```
 
-At a clamp of 0.05 the filter is so certain the corridor is free that all 80 footprint
-cells are still called free with the obstacle standing in them. Loosening the clamp
-converts those cells first to unknown and then, once one or two occupied observations
-suffice, to found. The cost arrives at the same point: at 0.28 the map grows a 9.00
-metre streak of stale occupancy behind the obstacle, 94 percent of the 9.60 metres it
-travelled, together with 3.24 square metres of ground wrongly held occupied. The streak
-survives because an approaching obstacle occludes the cells it has just left, so no
-later beam ever contradicts them, and it is absent from the receding case at every
-clamp because there the trail lies between the sensor and the obstacle and is corrected
-on the next sweep.
+Three things in that table are worth more than the headline.
 
-Two limits bound what any setting can buy. The 20 to 22 cells found at the loose
-settings match the 20 the parked control recovers, so that is the ceiling imposed by the
-sensor: a lidar sees the near surface of a disc and nothing behind it, whatever the
-filter does. And no setting in the sweep gives both a found obstacle and no streak, so
-the trade is not an artefact of poor tuning. Removing it needs a filter that models
-motion rather than assuming its absence, which this one deliberately does not;
-`docs/design-notes.md` names what that would cost.
+The damage has a shape, not only a size. At a final drift of 1.759 metres the occupied
+agreement collapses from 0.9923 to 0.4168 while the free agreement does not move at all,
+0.9865 against 0.9867. Free space is a thick region and survives being displaced by a
+metre, because most of it is still inside itself. A surface is one cell thick and a metre
+puts it somewhere else entirely, which is what the left hand panel of the figure shows:
+every wall drawn twice, once from before the drift and once from after.
 
-The scripts also write `outputs/static_scene_map.png`, `outputs/threshold_sweep.png` and
-`outputs/dynamic_smear.png`, which show the same results as figures. The last of these
-puts the parked control, the moving obstacle at the published clamp, the moving obstacle
-at a clamp of 0.28, and the crossing case side by side, so the trail and its absence can
-be seen rather than only counted.
+The correction is not free even when there is nothing to correct. The `0.0 matched` row is
+an exact odometry put through the matcher anyway, and it ends 0.141 metres from the truth
+and 4.1 points of occupied agreement down, 0.9923 to 0.9517. The matcher aligns each sweep
+with the discretised map rather than with the world, and the map's occupied cells sit on
+the near surface of every obstacle, up to a cell from where the truth says it is. That
+bias is a floor rather than a residue of the input: the matcher finishes between 0.12 and
+0.17 metres from the truth whether it started 0 or 3.515 metres away. Exact poses therefore
+remain the default for every other result here, and the odometry path is skipped entirely
+rather than run with its coefficients at zero, so no number above moved when this was
+added.
 
-## Architecture
+The `0.0 dead reckoned` row is the check that says so. It runs the whole odometry
+apparatus with every coefficient zero and reproduces the exact pose run to four decimal
+places on all four measures.
+
+What remains is loop closure. The matcher localises against the map it is building and
+never revises a sweep it has already integrated, so an error it accepts is permanent and a
+place revisited after a long excursion cannot pull the earlier map back into agreement.
+The corridor here is driven once end to end, so the case does not arise in these numbers,
+which is exactly why it is written down in `docs/design-notes.md` rather than demonstrated.
+
+## Modules and tests
 
 | Module | Responsibility |
 | --- | --- |
@@ -396,9 +412,11 @@ be seen rather than only counted.
 | `src/freespace_grid/algorithm/raycast.py` | Vectorised Amanatides and Woo grid traversal for a bundle of rays. |
 | `src/freespace_grid/algorithm/inverse_sensor.py` | One sweep reduced to disjoint free and occupied cell sets, including the range limit case. |
 | `src/freespace_grid/algorithm/accumulation.py` | `Accumulator`, whole cell translation, and the three window re-anchoring policies. |
+| `src/freespace_grid/algorithm/scan_match.py` | The likelihood field and the coarse to fine correlative pose search. |
 | `src/freespace_grid/pipeline/scene.py` | Circle and polygon obstacles, closed form ray intersection, and ground truth rasterisation. |
 | `src/freespace_grid/pipeline/lidar.py` | `LidarSpec` and `Scan`: noise, dropout, minimum range, and range limit returns. |
 | `src/freespace_grid/pipeline/trajectory.py` | Exact unicycle integration and even subsampling of a trajectory. |
+| `src/freespace_grid/pipeline/odometry.py` | `OdometryNoise` and dead reckoning of a corrupted body frame increment. |
 | `src/freespace_grid/pipeline/scenarios.py` | The named scenarios, static and dynamic, and the parameters that define them. |
 | `src/freespace_grid/pipeline/runner.py` | The trajectory loop and the `MappingTrace` it records. |
 | `src/freespace_grid/analysis/metrics.py` | `Agreement`, the threshold sweep, and the spatial tolerance sweep. |
@@ -408,46 +426,55 @@ be seen rather than only counted.
 | `src/freespace_grid/analysis/figures.py` | The figures. The only module that imports matplotlib. |
 | `examples/` | Wiring scripts, no logic. |
 
-Each layer depends only on the ones above it. The model layer performs no input or
-output and knows nothing about sensors; the algorithm layer draws nothing and simulates
-nothing; the pipeline layer scores nothing.
-
-## Testing
+Each layer depends only on the ones above it. The model layer performs no input or output
+and knows nothing about sensors; the algorithm layer draws nothing and simulates nothing;
+the pipeline layer scores nothing. `src/freespace_grid/py.typed` is present, so an
+application that installs this package receives the annotations mypy checks here rather
+than `Any`.
 
 ```bash
-uv run pytest
+uv run pytest --cov=src/freespace_grid --cov-report=term-missing
 uv run ruff check .
 uv run mypy
 ```
 
-The suite has three tiers: property and invariant tests covering the mathematics,
-regression tests pinning recorded behaviour, and integration tests running each
-example script under a reduced iteration count.
+174 tests run in under thirty seconds and cover 1228 of 1382 statements, which the report
+rounds to 89 percent and is 88.86 percent before rounding. CI runs that exact command with
+`--cov-fail-under=86`, the measured figure rounded down and reduced by two, so that a
+platform difference does not fail the build while a module falling out of test does. The
+one large gap is deliberate: `analysis/figures.py` reports zero because it is only ever
+reached through the example scripts, and the suite runs those as subprocesses so that they
+are exercised through the same entry point a reader uses.
 
-147 tests run in about 11 seconds. The first tier checks that the world to cell mapping
-round trips exactly at every cell centre of four different grids, that the probability
-and log odds conversions invert each other, that repeated observations reach the clamp
-and stop, that an untouched cell holds the prior bit for bit, that a single beam visits
-exactly the cells a hand computed crossing sequence names and exactly the cells a dense
-sampling of the segment falls in, that a range limit beam marks free space along its
-whole traversal and nothing occupied, that a whole cell window shift is a bit exact copy
-under all three interpolation settings, that a closed room converges to free interior
-and occupied walls with zero error, and that scoring a map against its own decision
-gives agreement of one on both classes.
+The suite has three tiers. The first checks the mathematics as properties: that the world
+to cell mapping round trips exactly at every cell centre of four different grids, that a
+single beam visits exactly the cells a hand computed crossing sequence names and exactly
+the cells a dense sampling of the segment falls in, that a range limit beam marks free
+space along its whole traversal and nothing occupied, that a whole cell window shift is a
+bit exact copy under all three interpolation settings, that a closed room converges to
+free interior and occupied walls with zero error, and that a displaced scan is pulled back
+to within half a cell by the matcher.
 
-The second tier compares `tests/data/reference_run.json` against a fresh run: five
-mapping runs, two sweeps, and three dynamic obstacle cases. Its module docstring states
-which quantities are pinned exactly,
-which are pinned to a tolerance, and why: beam and dropout counts come from a bit exact
-seeded stream and are compared exactly, while counts derived from trigonometry are
-allowed two cells or one part in five hundred, and the orderings that the experiment
-exists to demonstrate are asserted as inequalities rather than pinned as numbers.
-Nothing in the baseline comes from an iterative solve.
+The second compares `tests/data/reference_run.json` against a fresh run. Its module
+docstring states which quantities are pinned exactly, which to a tolerance, and why: beam
+and dropout counts come from a bit exact seeded stream and are compared exactly, counts
+derived from trigonometry are allowed two cells or one part in five hundred, and the
+orderings the experiments exist to demonstrate are asserted as inequalities rather than
+pinned as numbers.
 
-The third tier runs each script in `examples/` as a subprocess under a reduced step
-count, checks that it exits cleanly and writes nothing to standard error, and checks
-that it puts its figure in the requested directory and writes none when asked not to.
-A test also fails if a script is added to `examples/` without being listed.
+The third runs each script in `examples/` as a subprocess under a reduced step count,
+checks that it exits cleanly and writes nothing to standard error, and checks that it puts
+its figures where it was asked and writes none when told not to. A test fails if a script
+is added to `examples/` without being listed, and another fails if the tracked figures go
+missing or outgrow their budget.
+
+## What this does not do
+
+`docs/design-notes.md` records the alternatives that were rejected, the limitation that
+was closed and what closing it cost, and the ones that remain open. The short version of
+the last: cells are treated as independent so isolated errors are not suppressed, the map
+is two dimensional on flat ground, there is no loop closure, and the simulator has one
+return per beam with no divergence, intensity, multipath or weather.
 
 ## References
 
@@ -460,7 +487,8 @@ Algorithms:
   Computer 22(6), 1989, pages 46 to 57.
   DOI [10.1109/2.30720](https://doi.org/10.1109/2.30720)
 - S. Thrun, W. Burgard and D. Fox, "Probabilistic Robotics", MIT Press, 2005,
-  chapter 9, "Occupancy grid mapping". <https://mitpress.mit.edu/9780262201629/probabilistic-robotics/>
+  chapter 9, "Occupancy grid mapping", and chapter 5 for the odometry motion model.
+  <https://mitpress.mit.edu/9780262201629/probabilistic-robotics/>
 - J. Amanatides and A. Woo, "A fast voxel traversal algorithm for ray tracing",
   Proceedings of Eurographics 1987, pages 3 to 10.
   <https://www.cse.yorku.ca/~amana/research/grid.pdf>
@@ -471,6 +499,13 @@ Algorithms:
   efficient probabilistic 3D mapping framework based on octrees", Autonomous Robots
   34(3), 2013, pages 189 to 206.
   DOI [10.1007/s10514-012-9321-0](https://doi.org/10.1007/s10514-012-9321-0)
+- E. B. Olson, "Real-time correlative scan matching", Proceedings of the IEEE
+  International Conference on Robotics and Automation, 2009, pages 4387 to 4393.
+  DOI [10.1109/ROBOT.2009.5152375](https://doi.org/10.1109/ROBOT.2009.5152375)
+- S. Kohlbrecher, O. von Stryk, J. Meyer and U. Klingauf, "A flexible and scalable SLAM
+  system with full 3D motion estimation", IEEE International Symposium on Safety,
+  Security and Rescue Robotics, 2011, pages 155 to 160.
+  DOI [10.1109/SSRR.2011.6106777](https://doi.org/10.1109/SSRR.2011.6106777)
 - D. Hahnel, R. Triebel, W. Burgard and S. Thrun, "Map building with mobile robots in
   dynamic environments", Proceedings of the IEEE International Conference on Robotics
   and Automation, 2003, pages 1557 to 1563.
@@ -489,14 +524,14 @@ Dependencies:
   traversal, the geometric predicates, and the seeded PCG64 generator that makes every
   run reproducible.
 - [scipy](https://scipy.org/) (BSD 3-Clause). `scipy.ndimage.map_coordinates` for grid
-  resampling under vehicle motion, and `scipy.ndimage.binary_dilation` and
-  `binary_erosion` for the spatial tolerance and the boundary band.
+  resampling and for sampling the likelihood field, `gaussian_filter` for building it, and
+  `binary_dilation` and `binary_erosion` for the spatial tolerance and the boundary band.
 - [matplotlib](https://matplotlib.org/) (matplotlib license, a BSD-style permissive
   license). The figures in the analysis layer, used with the Agg backend so the
   examples need no display.
-- [pytest](https://docs.pytest.org/) (MIT), [ruff](https://docs.astral.sh/ruff/) (MIT),
-  and [mypy](https://mypy-lang.org/) (MIT). Development only: test running, linting, and
-  type checking.
+- [pytest](https://docs.pytest.org/) and [pytest-cov](https://pytest-cov.readthedocs.io/)
+  (MIT), [ruff](https://docs.astral.sh/ruff/) (MIT), and [mypy](https://mypy-lang.org/)
+  (MIT). Development only: test running, coverage measurement, linting, and type checking.
 
 ## License
 

@@ -16,7 +16,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from freespace_grid.analysis.figures import plot_smear_panels
+from freespace_grid.analysis.figures import Panel, plot_state_panels
 from freespace_grid.analysis.report import render_table, smear_table
 from freespace_grid.analysis.smear import run_smear_case
 from freespace_grid.model.logodds import LogOddsModel
@@ -71,6 +71,7 @@ def main() -> None:
                 "found",
                 "unknown",
                 "called free",
+                "parked finds",
             ],
             [
                 [
@@ -81,6 +82,7 @@ def main() -> None:
                     f"{case.report.moving.detected_cells:d}",
                     f"{case.report.moving.unknown_footprint_cells:d}",
                     f"{case.report.moving.false_free_cells:d}",
+                    f"{case.report.parked.detected_cells:d}",
                 ]
                 for value, case in zip(CLAMPS, sweep, strict=True)
             ],
@@ -89,7 +91,7 @@ def main() -> None:
 
     if not args.no_figure:
         loose = sweep[CLAMPS.index(0.28)]
-        panels = (
+        panels: tuple[Panel, ...] = (
             (
                 "approaching, parked control: the obstacle and its shadow, correctly placed",
                 cases[0].parked_trace,
@@ -111,7 +113,7 @@ def main() -> None:
                 cases[2].region,
             ),
         )
-        path = plot_smear_panels(panels, default, args.outdir / "dynamic_smear.png")
+        path = plot_state_panels(panels, default, args.outdir / "dynamic_smear.png")
         print(f"\nfigure: {path}")
 
 

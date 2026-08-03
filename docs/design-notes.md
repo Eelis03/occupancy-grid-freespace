@@ -17,8 +17,9 @@ The method depends on three assumptions and each one costs something.
 posteriors of its cells, so the fact that a wall is a connected object never enters. The
 cost is visible in the results: at building corners the beam grazes the facade, the
 return lands in the first cell outside it, and 459 free cells, 1.35 percent of the free
-ones, are called occupied. A model with spatial correlation would pull those isolated
-cells back towards their neighbours. The independence assumption is what makes the
+ones, are called occupied. Only a model that knows a facade is straight can remove them,
+because they sit against the real surface rather than out on their own, which is measured
+under the rejected alternatives below. The independence assumption is what makes the
 update a per-cell addition, so giving it up means giving up the whole computational
 argument for the representation, which is why almost every deployed occupancy grid keeps
 it.
@@ -32,11 +33,15 @@ buys a 9.00 metre trail of stale occupancy behind it. The two failures are oppos
 of one parameter and the sweep in `examples/dynamic_smear.py` shows there is no setting
 that avoids both.
 
-**The pose is known.** Every sweep is placed in the world frame using the pose the
-simulator supplies. Nothing in this repository estimates a pose or corrects one, so any
-error in it is written into the map as if it were sensor error. In a real system the
-pose comes from odometry and drifts, which is the problem that occupancy grid SLAM
-exists to solve; here it is out of scope and stated rather than hidden.
+**The pose is known.** Every sweep is placed in the map using the pose the mapper is
+handed, so any error in that pose is written into the map as if it were sensor error.
+This assumption was originally left standing and is now measured and, within one run,
+removed: `pipeline/odometry.py` corrupts the motion between consecutive poses so the
+estimate drifts the way a real one does, and `algorithm/scan_match.py` corrects it
+against the map built so far. The cost of both is recorded under "Closed limitations"
+below. What the assumption still buys is that every other result in this repository is
+produced with exact poses, so those numbers measure the sensor model rather than a
+localiser.
 
 ### The inverse sensor model
 
@@ -94,6 +99,40 @@ The scoring region is an argument with no default. Scored over the whole grid th
 reported in the README decides 58.14 percent of cells; scored over the cells at least one
 beam reached it decides 98.31 percent. The difference is sensor coverage, not mapping
 error, and reporting either number alone would be misleading.
+
+### Odometry error, and correcting it
+
+The error is applied to the motion between consecutive poses in the body frame, not to
+each absolute pose. That is the whole point: independent noise on an absolute pose gives
+a jitter that stays near the truth, while noise on each increment gives a drift that
+compounds, and only the second is indistinguishable from the world having changed. The
+three coefficients are the terms of the odometry motion model of Thrun, Burgard and Fox
+that matter at this scale, and the same variates are drawn at every noise level, so the
+rows of the drift table in the README are one accident of the seed at four amplitudes
+rather than four separate accidents.
+
+The correction is a correlative scan to map matcher: score a grid of candidate poses by
+how well the sweep's range returns land on the occupied evidence already in the map, and
+keep the best. Three details decide whether it works.
+
+The objective is a likelihood field rather than the log odds array. Scoring log odds
+directly would reward a candidate that pushes the sweep off the map, because an
+unobserved cell holds the prior while a correctly matched free cell holds a large
+negative number. The field is therefore zero wherever the map is free or unknown and
+positive only where it holds occupied evidence, so a candidate is paid for agreement and
+never for absence.
+
+The field is blurred by a Gaussian one cell wide. Unblurred it is a sum of indicator
+functions and is flat almost everywhere, so a candidate half a cell from the optimum
+scores the same as one ten cells away and the search has nothing to follow. The blur
+also absorbs the one cell disagreement between where a range return is attributed and
+where the surface actually is.
+
+The search is coarse to fine, three passes each halving the radius and the step. A
+single pass at the same final resolution would cost tens of thousands of candidates
+instead of a few hundred. The refinement can settle into a local optimum a full search
+would have rejected, and the blur is what keeps the first pass wide enough for that to
+be rare.
 
 ## Rejected alternatives
 
@@ -172,6 +211,36 @@ the few cells where something moved: a wall observed once and then occluded woul
 unknown at the same rate as a car that drove away. The clamp sweep already exposes the
 same trade with one parameter and without that side effect.
 
+### Gradient scan matching, and full SLAM, instead of a correlative search
+
+The Hector SLAM matcher optimises the same objective by Gauss-Newton on the bilinearly
+interpolated field, which is faster and resolves below the search step. It also needs a
+starting point inside the basin of the correct optimum, and the whole reason a pose
+correction is needed here is that the starting point is wrong by an unknown amount. The
+correlative search is slower and has no such requirement, and at 51 sweeps of a few
+hundred points the difference is under a second.
+
+Full SLAM, meaning a pose graph with loop closure that re-optimises earlier poses when a
+place is revisited, was not implemented. It is the correct answer to the part of the
+problem that remains, and it is a different project: it needs a graph, a closure
+detector, a solver, and a way to rebuild the map from corrected poses, none of which
+this repository has a use for elsewhere. The matcher here localises against the map it
+is building and never revises a sweep it has already integrated, which is stated in the
+limitations rather than glossed over.
+
+### A morphological opening to remove the spurious occupied cells
+
+This is why the independence limitation is still open. An opening on the decided map
+looked like the cheap fix, and it is not, for a reason specific to this map. Only the
+near surface of an obstacle is ever observed, so the occupied set of the map is a shell
+one cell thick, and a three by three opening deletes all of it rather than the spurious
+part of it. A connected component filter does not separate the two either: the
+free cells wrongly called occupied are the ones where a beam grazed a facade and the
+return landed in the first cell outside it, so they are adjacent to the real surface and
+belong to the same component. Suppressing them needs a model that knows a wall is
+straight, which is a spatial prior and is the assumption the representation gives up on
+purpose.
+
 ### Ground truth by rasterising the scene and then ray tracing the raster
 
 Scoring would have been simpler if the scene were rasterised once and the simulated
@@ -190,31 +259,40 @@ test that landed on that boundary would be measuring the offset rather than conv
 Quantified in the README. With the published clamp of 0.12, 60 of the 80 cells of an
 approaching obstacle's footprint and 79 of 80 of a crossing obstacle's are reported free.
 Loosening the clamp to 0.28 finds the obstacle and produces a 9.00 metre trail behind it.
-Removing this needs a filter that represents motion.
+This one is structural for this formulation and not a tuning failure. The filter has no
+state in which to keep a velocity and no update in which to apply one, so removing the
+limitation means replacing the representation, which is the subject of the rejected
+alternatives above rather than a change that could be made to what is here.
 
 **Only the near surface of an obstacle is ever observed.** A beam stops at the first
 surface, so the interior and far side of a solid object are never measured and can only
-be reported unknown. Of the 80 cells of the disc's footprint, at most 22 are ever found,
-and the parked control recovers 20, so this is a limit of the sensor rather than of the
-filter. Any figure that counts unknown interior cells as mapping errors will be dominated
-by the geometry of the scene.
+be reported unknown. Of the 80 cells of the disc's footprint the parked control recovers
+12 at every clamp setting, and the moving runs at the loosest clamps reach 22, so 58 of
+the 80 are unobservable in principle rather than missed by the filter. Any figure that
+counts unknown interior cells as mapping errors will be dominated by the geometry of the
+scene.
 
-**Poses are exact.** There is no odometry model, no pose noise and no pose correction.
-With drifting poses, evidence from different sweeps lands in different cells and the map
-blurs in a way none of the measurements here capture. Adding pose noise to the simulator
-would be a few lines; correcting for it is a scan matching or SLAM problem and is out of
-scope.
+**The pose correction has no memory.** The matcher aligns each sweep against the map
+built from every earlier sweep and then integrates it. Nothing revisits a sweep once it
+is in, so an error the matcher accepts is permanent, and returning to a place after a
+long excursion cannot pull the earlier part of the map back into agreement. That is loop
+closure and it needs a pose graph, which this repository does not have. The corridor
+here is driven once end to end, so the case never arises in the measurements, which is
+exactly why it is written down rather than demonstrated.
 
 **The map is two dimensional and the ground is flat.** Every obstacle is a vertical
 prism and the sensor scans one plane. A real bird's-eye-view free space estimator has to
 decide which returns are ground and which are obstacles, on a surface that is not flat,
 and that decision dominates its error budget. Nothing here addresses it.
 
-**Cells are independent, so isolated errors are not suppressed.** The 459 free cells
-called occupied are mostly single cells at building corners. A model with any spatial
-prior, or a morphological opening applied to the decided map, would remove most of them.
-Neither is applied, because doing so would make the reported agreement a property of the
-filter rather than of the sensor model.
+**Cells are independent, so spurious occupied cells are not suppressed.** The 459 free
+cells called occupied are single cells at building corners. The obvious cheap remedy, a
+morphological opening on the decided map, was examined and rejected: the occupied set of
+this map is a shell one cell thick, so an opening deletes all of it, and the spurious
+cells touch the real facade so a connected component filter does not separate them
+either. Removing them needs a spatial prior, which is the assumption the representation
+gives up on purpose, and applying one would make the reported agreement a property of the
+prior rather than of the sensor model.
 
 **The decision threshold is bounded by the clamp.** With a free clamp at 0.12 no
 threshold above 0.88 can ever call a cell free, and `LogOddsModel` raises an error rather
@@ -232,3 +310,53 @@ policy.
 intensity, no multipath and no weather. Each of those changes the inverse sensor model,
 and beam divergence in particular would make the occupied evidence span several cells at
 range, which is the assumption the piecewise constant model makes least well.
+
+## Closed limitations
+
+### Poses are exact
+
+**What it said.** There was no odometry model, no pose noise and no pose correction.
+Evidence from different sweeps was guaranteed to land in the right cells, and the note
+recorded that with a drifting pose the map would blur in a way none of the measurements
+captured.
+
+**What was closed.** All three. `pipeline/odometry.py` corrupts the body frame motion
+between consecutive poses, so the estimate handed to the mapper drifts and compounds;
+`algorithm/scan_match.py` corrects it by correlative scan to map matching; and
+`examples/pose_drift.py` measures both against the exact pose run at four amplitudes.
+The damage is now a number rather than a prediction. At a final drift of 1.76 metres the
+occupied agreement falls from 0.9923 to 0.4168 while the free agreement is unchanged at
+0.9867, which is the shape of the failure as well as its size: free space is a thick
+region and survives being moved, a surface is one cell thick and does not. Correcting
+the same run brings the final pose error to 0.123 metres and the occupied agreement back
+to 0.9577.
+
+**What it cost.** Three things, in descending order of importance.
+
+The correction is not free even when there is nothing to correct. Run against an
+odometry with every coefficient set to zero, the matcher still moves the final pose 0.141
+metres off the truth and costs 4.1 points of occupied agreement, 0.9923 down to 0.9517.
+It aligns each sweep with the discretised map rather than with the world, and the map's
+occupied cells sit on the near surface of every obstacle, up to a cell away from where
+the truth says the surface is. That bias is a floor rather than a residue of the input
+error: the matcher finishes between 0.12 and 0.17 metres from the truth whether the
+drift it started from was zero or 3.5 metres. Because of it, exact poses stay the default
+for every other result in this repository, and the odometry path is skipped entirely
+rather than run with its coefficients at zero, so no published number moved.
+
+Two new modules, `pipeline/odometry.py` and `algorithm/scan_match.py`, one further
+function from `scipy.ndimage`, a module the project already depended on, and roughly
+double the runtime of a mapping run: 0.4 seconds becomes 0.9.
+
+A search window, which is a parameter with a failure mode. The default searches four
+cells and two degrees around the prediction, refined twice. An odometry worse than that
+per step, or a run shortened enough that each step covers several metres, walks out of
+the window and the correction stops helping. `examples/pose_drift.py` at a reduced step
+count shows exactly that at the largest amplitude, which is left visible rather than
+tuned away.
+
+**What remains.** Loop closure, recorded as an open limitation above: the matcher never
+revises a sweep it has already integrated, so it is localisation against a growing map
+rather than SLAM. The odometry model is also Gaussian and zero mean, which real odometry
+is not: a slipping wheel or a scale error is a bias, and a bias is the case a matcher
+finds hardest because it points the same way every step.

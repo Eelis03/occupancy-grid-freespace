@@ -29,8 +29,16 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
+      # The floor is the measured statement coverage rounded down and reduced by two,
+      # which leaves room for a platform difference without leaving room for a module
+      # to stop being tested. The figure module reports zero here on purpose: it is
+      # exercised only through the example scripts, which run as subprocesses.
       - name: Run tests
-        run: uv run pytest -q
+        run: >
+          uv run pytest -q
+          --cov=src/freespace_grid
+          --cov-report=term-missing
+          --cov-fail-under=86
 
       - name: Lint
         run: uv run ruff check .

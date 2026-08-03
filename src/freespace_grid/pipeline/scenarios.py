@@ -14,17 +14,30 @@ from freespace_grid.model.grid import GridSpec
 from freespace_grid.model.logodds import LogOddsModel
 from freespace_grid.model.transform import Pose2D
 from freespace_grid.pipeline.lidar import LidarSpec
+from freespace_grid.pipeline.odometry import OdometryNoise
 from freespace_grid.pipeline.scene import Circle, MovingCircle, Polygon, Scene
 from freespace_grid.pipeline.trajectory import Trajectory, constant_twist, from_segments
 
 __all__ = [
     "DYNAMIC_DIRECTIONS",
+    "SCANNER_ODOMETRY",
     "SCENARIOS",
     "Scenario",
     "dynamic_corridor",
     "enclosed_room",
     "urban_block",
 ]
+
+# The unit of odometry error used by the pose drift study, not a property of any one
+# scenario: two percent of the distance travelled in translation, 0.23 degrees per metre
+# of heading error, and 1.15 degrees per radian turned. That is the order of magnitude of
+# wheel odometry on a vehicle with no inertial aiding. It lives here rather than in a
+# script so that the drift figure and the drift table are scaling the same quantity.
+SCANNER_ODOMETRY = OdometryNoise(
+    translation_std_per_m=0.02,
+    heading_std_per_m=0.004,
+    heading_std_per_rad=0.02,
+)
 
 
 @dataclass(frozen=True, slots=True)

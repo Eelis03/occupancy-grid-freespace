@@ -1,9 +1,18 @@
-"""Figures. The only module in the package that imports matplotlib."""
+"""Figures. The only module in the package that imports matplotlib.
+
+Two audiences are served here and they want different things. The example scripts want
+a large figure that can be zoomed into, so they take the defaults. The three figures
+tracked in ``docs/figures`` have to fit a byte budget and are read at the width of a
+README column, so every entry point takes an explicit size, resolution and crop rather
+than hard coding one. A three way decision map is a flat colour image and survives a
+modest resolution intact, which is what makes the budget affordable without a
+compression dependency.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import matplotlib
 
@@ -11,6 +20,7 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.axes import Axes
 
 from freespace_grid.analysis.metrics import Agreement
 from freespace_grid.model.logodds import LogOddsModel
@@ -21,12 +31,19 @@ if TYPE_CHECKING:  # pragma: no cover - import only for annotations
     from freespace_grid.pipeline.runner import MappingTrace
 
 __all__ = [
+    "Panel",
+    "plot_decision_map",
     "plot_map",
-    "plot_smear_panels",
+    "plot_state_panels",
     "plot_threshold_sweep",
 ]
 
 _STATE_COLORS = ("#9aa0a6", "#f5f5f5", "#1a1a1a")
+_TRUTH_COLOR = "#d1495b"
+_REGION_COLOR = "#2a9d8f"
+
+Crop = tuple[float, float, float, float]
+Panel = tuple[str, "MappingTrace", BoolArray | None]
 
 
 def _state_image(grid: OccupancyGrid, model: LogOddsModel) -> np.ndarray:
@@ -134,48 +151,129 @@ def plot_threshold_sweep(
     return path
 
 
-def plot_smear_panels(
-    panels: tuple[tuple[str, MappingTrace, BoolArray], ...],
+def _draw_state_panel(
+    axis: Axes,
+    label: str,
+    trace: MappingTrace,
+    region: BoolArray | None,
+    model: LogOddsModel,
+    *,
+    crop: Crop | None,
+    fontsize: float,
+) -> None:
+    """Draw one three way decision map with the ground truth outlined on top of it."""
+    extent = trace.grid.spec.extent
+    axis.imshow(
+        _state_image(trace.grid, model),
+        origin="lower",
+        extent=extent,
+        interpolation="nearest",
+    )
+    if region is not None:
+        axis.contour(
+            np.asarray(region, dtype=np.float64),
+            levels=[0.5],
+            colors=_REGION_COLOR,
+            linewidths=0.8,
+            origin="lower",
+            extent=extent,
+        )
+    axis.contour(
+        np.asarray(trace.truth, dtype=np.float64),
+        levels=[0.5],
+        colors=_TRUTH_COLOR,
+        linewidths=0.8,
+        origin="lower",
+        extent=extent,
+    )
+    axis.plot(trace.steps[0].x, trace.steps[0].y, marker="o", color="#e9c46a", markersize=5)
+    axis.set_title(label, fontsize=fontsize)
+    axis.set_xlabel("x (m)", fontsize=fontsize)
+    axis.set_ylabel("y (m)", fontsize=fontsize)
+    axis.tick_params(labelsize=fontsize - 1.0)
+    if crop is not None:
+        axis.set_xlim(crop[0], crop[1])
+        axis.set_ylim(crop[2], crop[3])
+
+
+def plot_state_panels(
+    panels: tuple[Panel, ...],
     model: LogOddsModel,
     path: Path,
     *,
     title: str = "Static world assumption under a moving obstacle",
+    layout: Literal["rows", "columns"] = "rows",
+    width: float = 11.0,
+    panel_height: float = 2.6,
+    dpi: int = 140,
+    crop: Crop | None = None,
+    fontsize: float = 10.0,
 ) -> Path:
-    """Write one decision map per panel, with the region of interest outlined."""
+    """Write one three way decision map per panel, ground truth outlined in red.
+
+    Args:
+        panels: ``(label, trace, region)`` triples. A region of ``None`` draws no
+            region outline, which is what a panel that is about the whole map wants.
+        model: Supplies the decision band.
+        path: Destination file.
+        title: Figure level title.
+        layout: ``rows`` stacks the panels, ``columns`` places them side by side. Side
+            by side is the right choice for a before and after pair, because the eye
+            compares horizontally displaced images far more readily than stacked ones.
+        width: Figure width in inches.
+        panel_height: Height of one panel in inches.
+        dpi: Output resolution.
+        crop: Optional ``(x_min, x_max, y_min, y_max)`` window in metres. Applied to
+            every panel, so the panels stay comparable.
+        fontsize: Base font size for titles and axis labels.
+    """
+    count = len(panels)
+    if count == 0:
+        raise ValueError("at least one panel is required")
+    rows, cols = (count, 1) if layout == "rows" else (1, count)
     fig, axes = plt.subplots(
-        len(panels), 1, figsize=(11.0, 2.6 * len(panels) + 1.0), constrained_layout=True
+        rows,
+        cols,
+        figsize=(width, panel_height * rows + 1.0),
+        constrained_layout=True,
     )
-    axis_list = np.atleast_1d(axes)
-    for axis, (label, trace, region) in zip(axis_list, panels, strict=True):
-        extent = trace.grid.spec.extent
-        axis.imshow(
-            _state_image(trace.grid, model),
-            origin="lower",
-            extent=extent,
-            interpolation="nearest",
+    for axis, (label, trace, region) in zip(np.atleast_1d(axes), panels, strict=True):
+        _draw_state_panel(
+            axis, label, trace, region, model, crop=crop, fontsize=fontsize
         )
-        axis.contour(
-            np.asarray(region, dtype=np.float64),
-            levels=[0.5],
-            colors="#2a9d8f",
-            linewidths=0.8,
-            origin="lower",
-            extent=extent,
-        )
-        axis.contour(
-            np.asarray(trace.truth, dtype=np.float64),
-            levels=[0.5],
-            colors="#d1495b",
-            linewidths=0.8,
-            origin="lower",
-            extent=extent,
-        )
-        axis.plot(trace.steps[0].x, trace.steps[0].y, marker="o", color="#e9c46a", markersize=6)
-        axis.set_title(label, fontsize=10)
-        axis.set_xlabel("x (m)")
-        axis.set_ylabel("y (m)")
-    fig.suptitle(title)
+    fig.suptitle(title, fontsize=fontsize + 1.0)
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=140)
+    fig.savefig(path, dpi=dpi)
+    plt.close(fig)
+    return path
+
+
+def plot_decision_map(
+    trace: MappingTrace,
+    model: LogOddsModel,
+    path: Path,
+    *,
+    title: str = "Occupancy map",
+    width: float = 8.0,
+    dpi: int = 110,
+    crop: Crop | None = None,
+    fontsize: float = 9.0,
+) -> Path:
+    """Write a single panel decision map, sized from the aspect ratio of the grid."""
+    spec = trace.grid.spec
+    aspect = (spec.rows * spec.resolution) / (spec.cols * spec.resolution)
+    height = max(2.0, width * aspect) + 0.9
+    fig, axis = plt.subplots(figsize=(width, height), constrained_layout=True)
+    _draw_state_panel(axis, title, trace, None, model, crop=crop, fontsize=fontsize)
+    axis.plot(
+        [step.x for step in trace.steps],
+        [step.y for step in trace.steps],
+        color=_REGION_COLOR,
+        linewidth=1.2,
+        label="vehicle path",
+    )
+    axis.legend(loc="upper right", fontsize=fontsize - 1.0)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=dpi)
     plt.close(fig)
     return path
