@@ -76,13 +76,33 @@ def test_every_example_script_is_covered() -> None:
     assert scripts == {item.script for item in INVOCATIONS}
 
 
+# Lines a dependency writes to stderr about its own housekeeping. They say nothing
+# about the script that triggered them, and on a fresh runner matplotlib emits the
+# first of these the very first time any process imports pyplot.
+_BENIGN_STDERR: tuple[str, ...] = ("Matplotlib is building the font cache",)
+
+
+def unexpected_stderr(text: str) -> list[str]:
+    """Return the stderr lines that indicate a real problem.
+
+    An earlier version of this test required stderr to be empty. That is stricter
+    than the property it was written to check, which is that the script completed
+    without complaining. A dependency is entitled to write an informational line
+    to stderr, and matplotlib does exactly that on a runner with no font cache,
+    which passed on Linux and failed on Windows for a reason unrelated to this
+    repository.
+    """
+    lines = [line for line in text.splitlines() if line.strip()]
+    return [line for line in lines if not any(token in line for token in _BENIGN_STDERR)]
+
+
 @pytest.mark.parametrize("case", INVOCATIONS, ids=IDS)
 def test_example_runs_to_completion(case: Invocation, tmp_path: Path) -> None:
     extra = () if not case.figures else ("--outdir", str(tmp_path))
     completed = run_example(case.script, (*case.arguments, *extra))
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout.strip()
-    assert not completed.stderr.strip()
+    assert unexpected_stderr(completed.stderr) == []
     if not case.figures:
         assert list(tmp_path.iterdir()) == []
         return
