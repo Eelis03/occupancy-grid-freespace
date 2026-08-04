@@ -422,6 +422,7 @@ which is exactly why it is written down in `docs/design-notes.md` rather than de
 | `src/freespace_grid/analysis/metrics.py` | `Agreement`, the threshold sweep, and the spatial tolerance sweep. |
 | `src/freespace_grid/analysis/smear.py` | Region of interest construction, smear measurement, and the moving against parked comparison. |
 | `src/freespace_grid/analysis/sharpness.py` | Clamp saturation and edge contrast, used to measure resampling loss. |
+| `src/freespace_grid/analysis/reachability.py` | The free space connected to the vehicle, its frontier with the unknown region, and which of the wrongly free cells lie inside it. |
 | `src/freespace_grid/analysis/report.py` | Rendering of measurement records as the tables above. |
 | `src/freespace_grid/analysis/figures.py` | The figures. The only module that imports matplotlib. |
 | `examples/` | Wiring scripts, no logic. |
@@ -438,10 +439,10 @@ uv run ruff check .
 uv run mypy
 ```
 
-174 tests run in under thirty seconds and cover 1228 of 1382 statements, which the report
-rounds to 89 percent and is 88.86 percent before rounding. CI runs that exact command with
-`--cov-fail-under=86`, the measured figure rounded down and reduced by two, so that a
-platform difference does not fail the build while a module falling out of test does. The
+180 tests run in under thirty seconds and cover 1286 of 1440 statements, which the report
+rounds to 89 percent and is 89.31 percent before rounding. CI runs that exact command with
+`--cov-fail-under=86`, three points below the measured figure, so that a platform
+difference does not fail the build while a module falling out of test does. The
 one large gap is deliberate: `analysis/figures.py` reports zero because it is only ever
 reached through the example scripts, and the suite runs those as subprocesses so that they
 are exercised through the same entry point a reader uses.
@@ -452,8 +453,9 @@ single beam visits exactly the cells a hand computed crossing sequence names and
 the cells a dense sampling of the segment falls in, that a range limit beam marks free
 space along its whole traversal and nothing occupied, that a whole cell window shift is a
 bit exact copy under all three interpolation settings, that a closed room converges to
-free interior and occupied walls with zero error, and that a displaced scan is pulled back
-to within half a cell by the matcher.
+free interior and occupied walls with zero error, that a displaced scan is pulled back to
+within half a cell by the matcher, and that free space behind a wall is not reported as
+reachable while a corner between two occupied cells is not a way through it.
 
 The second compares `tests/data/reference_run.json` against a fresh run. Its module
 docstring states which quantities are pinned exactly, which to a tolerance, and why: beam
@@ -524,8 +526,9 @@ Dependencies:
   traversal, the geometric predicates, and the seeded PCG64 generator that makes every
   run reproducible.
 - [scipy](https://scipy.org/) (BSD 3-Clause). `scipy.ndimage.map_coordinates` for grid
-  resampling and for sampling the likelihood field, `gaussian_filter` for building it, and
-  `binary_dilation` and `binary_erosion` for the spatial tolerance and the boundary band.
+  resampling and for sampling the likelihood field, `gaussian_filter` for building it,
+  `binary_dilation` and `binary_erosion` for the spatial tolerance and the boundary band,
+  and `label` for the connected components of the free space.
 - [matplotlib](https://matplotlib.org/) (matplotlib license, a BSD-style permissive
   license). The figures in the analysis layer, used with the Agg backend so the
   examples need no display.

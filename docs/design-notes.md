@@ -100,6 +100,17 @@ reported in the README decides 58.14 percent of cells; scored over the cells at 
 beam reached it decides 98.31 percent. The difference is sensor coverage, not mapping
 error, and reporting either number alone would be misleading.
 
+None of the three is a planner's question, and `analysis/reachability.py` answers that one
+apart from them rather than folding it in. Agreement weights every cell alike, while a
+vehicle can only use free space joined to where it stands and can only be hurt by an error
+inside it. That module floods the free cells outward from the vehicle with occupied and
+unknown cells alike impassable, which is the rule a planner applies to this map and the
+sense in which unknown is the safe failure, and it splits the cells wrongly called free
+into the ones shut behind a surface the map did find and the ones a vehicle could reach.
+The flood is four connected rather than eight, for the reason the ray traversal will not
+cut a corner: an eight connected fill passes between two occupied cells meeting
+diagonally, and a vehicle does not.
+
 ### Odometry error, and correcting it
 
 The error is applied to the motion between consecutive poses in the body frame, not to
