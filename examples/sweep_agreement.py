@@ -54,8 +54,10 @@ def main() -> None:
     print("decision threshold sweep")
     print(agreement_table(thresholds, by="decision_prob"))
     print()
-    print("spatial tolerance sweep on the occupied class, threshold held at "
-          f"{scenario.model.decision_prob:.2f}")
+    print(
+        "spatial tolerance sweep on the occupied class, threshold held at "
+        f"{scenario.model.decision_prob:.2f}"
+    )
     print(agreement_table(tolerances, by="spatial_tolerance"))
 
     if not args.no_figure:

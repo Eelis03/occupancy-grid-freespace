@@ -95,9 +95,7 @@ def static_map_figure(outdir: Path, steps: int | None) -> Path:
 def pose_drift_figure(outdir: Path, steps: int | None) -> Path:
     """A drifting pose against the same drift corrected by scan to map matching."""
     scenario = urban_block()
-    reckoned = run_mapping(
-        scenario, RunConfig(frame="world", odometry=DRIFT, max_steps=steps)
-    )
+    reckoned = run_mapping(scenario, RunConfig(frame="world", odometry=DRIFT, max_steps=steps))
     matched = run_mapping(
         scenario,
         RunConfig(frame="world", odometry=DRIFT, pose_correction=True, max_steps=steps),

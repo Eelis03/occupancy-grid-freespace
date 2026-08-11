@@ -174,9 +174,7 @@ def dynamic_corridor(direction: str, model: LogOddsModel | None = None) -> Scena
             clamp sweep in ``examples/dynamic_smear.py``.
     """
     if direction not in _DYNAMIC_MOTION:
-        raise ValueError(
-            f"direction must be one of {list(DYNAMIC_DIRECTIONS)}, got {direction!r}"
-        )
+        raise ValueError(f"direction must be one of {list(DYNAMIC_DIRECTIONS)}, got {direction!r}")
     start_x, start_y, vel_x, vel_y = _DYNAMIC_MOTION[direction]
 
     scene = Scene(

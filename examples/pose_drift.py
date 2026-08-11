@@ -74,9 +74,7 @@ def main() -> None:
         )
         matched = run_mapping(
             scenario,
-            RunConfig(
-                frame="world", odometry=noise, pose_correction=True, max_steps=args.steps
-            ),
+            RunConfig(frame="world", odometry=noise, pose_correction=True, max_steps=args.steps),
         )
         rows.append(row(f"{scale:.1f}", "dead reckoned", reckoned))
         rows.append(row(f"{scale:.1f}", "matched", matched))

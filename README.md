@@ -4,7 +4,7 @@ Bird's-eye-view free space estimation from simulated lidar using an inverse sens
 built to measure where the model breaks rather than only where it works.
 
 [![CI](https://github.com/Eelis03/occupancy-grid-freespace/actions/workflows/ci.yml/badge.svg)](https://github.com/Eelis03/occupancy-grid-freespace/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/downloads/)
+[![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ![Accumulated grid with the moving obstacle missing entirely, its footprint cells marked free space, beside a parked control in which the same disc is found and shadows the ground behind it](docs/figures/dynamic_obstacle.png)
@@ -157,14 +157,19 @@ agreement = score_grid(trace.grid, trace.truth, scenario.model, region=trace.obs
 
 print(len(trace.steps), trace.totals()["max_range_beams"])
 # 51 11699
-print(round(agreement.decided_fraction, 4), round(agreement.free_agreement, 4),
-      round(agreement.occupied_agreement, 4))
+print(
+    round(agreement.decided_fraction, 4),
+    round(agreement.free_agreement, 4),
+    round(agreement.occupied_agreement, 4),
+)
 # 0.9831 0.9865 0.9923
 ```
 
 ## Installation
 
-Requires Python 3.12 or later.
+Requires Python 3.12 or later. Continuous integration runs the whole suite on 3.12 and
+3.13, on Linux and on Windows, so the version floor in `pyproject.toml` is a tested claim
+rather than a declared one.
 
 ```bash
 git clone https://github.com/Eelis03/occupancy-grid-freespace.git
@@ -435,6 +440,7 @@ than `Any`.
 ```bash
 uv run pytest --cov=src/freespace_grid --cov-report=term-missing
 uv run ruff check .
+uv run ruff format --check .
 uv run mypy
 ```
 

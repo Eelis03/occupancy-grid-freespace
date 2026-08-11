@@ -101,8 +101,7 @@ def plot_map(
         extent=extent,
     )
     second.set_title(
-        f"{title}: decision at p >= {model.decision_prob:.2f}, "
-        "ground truth outline in red"
+        f"{title}: decision at p >= {model.decision_prob:.2f}, ground truth outline in red"
     )
 
     xs = [step.x for step in trace.steps]
@@ -238,9 +237,7 @@ def plot_state_panels(
         constrained_layout=True,
     )
     for axis, (label, trace, region) in zip(np.atleast_1d(axes), panels, strict=True):
-        _draw_state_panel(
-            axis, label, trace, region, model, crop=crop, fontsize=fontsize
-        )
+        _draw_state_panel(axis, label, trace, region, model, crop=crop, fontsize=fontsize)
     fig.suptitle(title, fontsize=fontsize + 1.0)
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=dpi)

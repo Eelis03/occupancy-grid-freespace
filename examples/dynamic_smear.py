@@ -40,12 +40,16 @@ def main() -> None:
     default = LogOddsModel()
 
     cases = [run_smear_case(name, max_steps=args.steps) for name in DYNAMIC_DIRECTIONS]
-    print(f"default model: p_free {default.p_free}, p_occupied {default.p_occupied}, "
-          f"clamp {default.clamp_free_prob} to {default.clamp_occupied_prob}, "
-          f"decision {default.decision_prob}")
-    print(f"one occupied observation is undone by {default.forget_ratio:.2f} free "
-          f"observations; a fully clamped free cell needs "
-          f"{default.observations_to_occupied():.2f} occupied observations to be called occupied")
+    print(
+        f"default model: p_free {default.p_free}, p_occupied {default.p_occupied}, "
+        f"clamp {default.clamp_free_prob} to {default.clamp_occupied_prob}, "
+        f"decision {default.decision_prob}"
+    )
+    print(
+        f"one occupied observation is undone by {default.forget_ratio:.2f} free "
+        f"observations; a fully clamped free cell needs "
+        f"{default.observations_to_occupied():.2f} occupied observations to be called occupied"
+    )
     print(f"sweeps per run: {len(cases[0].moving_trace.steps)}\n")
     print("motion relative to the stationary sensor, default model")
     print(smear_table([case.report for case in cases]))

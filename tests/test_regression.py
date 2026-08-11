@@ -113,9 +113,7 @@ def test_map_contents_are_reproduced(
     assert produced["lossless_resamples"] == recorded["lossless_resamples"]
     assert_count(produced["observed_cells"], recorded["observed_cells"], f"{run}.observed")
     for state in ("free", "occupied", "unknown"):
-        assert_count(
-            produced["states"][state], recorded["states"][state], f"{run}.states.{state}"
-        )
+        assert_count(produced["states"][state], recorded["states"][state], f"{run}.states.{state}")
     assert sum(produced["states"].values()) == produced["grid_cells"]
 
 

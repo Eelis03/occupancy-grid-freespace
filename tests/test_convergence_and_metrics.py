@@ -79,8 +79,9 @@ def test_the_run_trace_serialises_to_json_with_one_record_per_sweep() -> None:
     assert document["config"]["frame"] == "world"
     for step in document["steps"]:
         assert step["hits"] + step["max_range_beams"] == step["beams"]
-        assert step["free_cells"] + step["occupied_cells"] + step["unknown_cells"] == (
-            document["grid_cells"]
+        assert (
+            step["free_cells"] + step["occupied_cells"] + step["unknown_cells"]
+            == (document["grid_cells"])
         )
     assert trace.final is trace.steps[-1]
 
@@ -100,9 +101,7 @@ def test_scoring_a_grid_against_itself_is_perfect() -> None:
     rng = np.random.default_rng(23)
     model = LogOddsModel()
     spec = GridSpec(resolution=0.4, rows=48, cols=61, origin_x=-3.0, origin_y=2.0)
-    grid = OccupancyGrid(
-        spec=spec, log_odds=rng.uniform(model.l_min, model.l_max, size=spec.shape)
-    )
+    grid = OccupancyGrid(spec=spec, log_odds=rng.uniform(model.l_min, model.l_max, size=spec.shape))
     truth = np.asarray(grid.classify(model) == int(CellState.OCCUPIED), dtype=np.bool_)
     agreement = score_grid(grid, truth, model)
     assert agreement.free_agreement == 1.0
@@ -117,9 +116,7 @@ def test_scoring_against_the_complement_is_the_worst_possible() -> None:
     rng = np.random.default_rng(24)
     model = LogOddsModel()
     spec = GridSpec(resolution=0.4, rows=30, cols=30)
-    grid = OccupancyGrid(
-        spec=spec, log_odds=rng.uniform(model.l_min, model.l_max, size=spec.shape)
-    )
+    grid = OccupancyGrid(spec=spec, log_odds=rng.uniform(model.l_min, model.l_max, size=spec.shape))
     truth = np.asarray(grid.classify(model) == int(CellState.FREE), dtype=np.bool_)
     agreement = score_grid(grid, truth, model)
     assert agreement.free_agreement == 0.0
@@ -187,9 +184,7 @@ def test_measure_smear_recovers_a_known_rectangle() -> None:
     truth = np.zeros(spec.shape, dtype=np.bool_)
     truth[55:65, 40:80] = True
     region = np.ones(spec.shape, dtype=np.bool_)
-    metrics = measure_smear(
-        grid, truth, model, region, np.array([1.0, 0.0]), label="planted"
-    )
+    metrics = measure_smear(grid, truth, model, region, np.array([1.0, 0.0]), label="planted")
     assert metrics.occupied_cells == 400
     assert metrics.extent_along == pytest.approx(4.0)
     assert metrics.extent_across == pytest.approx(1.0)

@@ -59,9 +59,7 @@ def test_translating_there_and_back_restores_the_overlap_exactly() -> None:
     """Two opposite whole cell shifts leave the surviving region unchanged."""
     spec = GridSpec(resolution=0.2, rows=24, cols=24)
     grid = random_grid(spec, seed=13)
-    forward = GridSpec(
-        resolution=0.2, rows=24, cols=24, origin_x=0.2 * 5, origin_y=0.2 * 3
-    )
+    forward = GridSpec(resolution=0.2, rows=24, cols=24, origin_x=0.2 * 5, origin_y=0.2 * 3)
     moved = resample_grid(grid, forward, MODEL, interpolation="snap")
     back = resample_grid(moved, spec, MODEL, interpolation="snap")
     # The window moved up three rows and right five columns and then came back, so the
@@ -116,9 +114,9 @@ def test_snap_policy_never_interpolates() -> None:
     """Under snap, every re-anchor is reported lossless however the vehicle moves."""
     spec = GridSpec(resolution=0.2, rows=40, cols=40)
     accumulator = Accumulator.from_prior(spec, MODEL)
-    accumulator.grid.log_odds[:] = np.linspace(
-        MODEL.l_min, MODEL.l_max, spec.size
-    ).reshape(spec.shape)
+    accumulator.grid.log_odds[:] = np.linspace(MODEL.l_min, MODEL.l_max, spec.size).reshape(
+        spec.shape
+    )
     rng = np.random.default_rng(2)
     for _ in range(12):
         target = rng.uniform(2.0, 6.0, size=2)

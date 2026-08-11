@@ -50,9 +50,7 @@ def main() -> None:
         trace = run_mapping(scenario, config)
         observed = trace.observed_mask
         agreement = score_grid(trace.grid, trace.truth, scenario.model, region=observed)
-        sharpness = measure_sharpness(
-            trace.grid, trace.truth, scenario.model, region=observed
-        )
+        sharpness = measure_sharpness(trace.grid, trace.truth, scenario.model, region=observed)
         rows.append(
             [
                 label,

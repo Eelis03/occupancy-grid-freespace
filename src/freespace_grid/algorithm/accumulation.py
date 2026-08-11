@@ -179,9 +179,7 @@ class Accumulator:
             occupied_observations=np.zeros(spec.shape, dtype=np.int64),
         )
 
-    def integrate(
-        self, origin: FloatArray, endpoints: FloatArray, is_hit: BoolArray
-    ) -> ScanUpdate:
+    def integrate(self, origin: FloatArray, endpoints: FloatArray, is_hit: BoolArray) -> ScanUpdate:
         """Apply one scan to the current map."""
         update = apply_scan(
             self.grid,
