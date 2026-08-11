@@ -124,9 +124,7 @@ class Scan:
         )
 
 
-def simulate_scan(
-    scene: Scene, pose: Pose2D, lidar: LidarSpec, rng: np.random.Generator
-) -> Scan:
+def simulate_scan(scene: Scene, pose: Pose2D, lidar: LidarSpec, rng: np.random.Generator) -> Scan:
     """Simulate one sweep against ``scene`` from ``pose``.
 
     The order of operations matters for reproducibility: dropout is drawn first for

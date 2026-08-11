@@ -221,9 +221,7 @@ def run_mapping(scenario: Scenario, config: RunConfig | None = None) -> MappingT
     estimate = trajectory.poses[0]
     corrections = 0
 
-    for index, (pose, time) in enumerate(
-        zip(trajectory.poses, trajectory.times, strict=True)
-    ):
+    for index, (pose, time) in enumerate(zip(trajectory.poses, trajectory.times, strict=True)):
         if increments is None:
             estimate = pose
         elif index > 0:
@@ -241,9 +239,7 @@ def run_mapping(scenario: Scenario, config: RunConfig | None = None) -> MappingT
             points = scan_body_points(
                 scan.angles, scan.ranges, scan.is_hit, stride=run.match_stride
             )
-            result = match_scan(
-                accumulator.grid, scenario.model, points, estimate, window=search
-            )
+            result = match_scan(accumulator.grid, scenario.model, points, estimate, window=search)
             estimate = result.pose
             evaluations = result.evaluations
             correction = result.translation_correction

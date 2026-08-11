@@ -101,9 +101,7 @@ def test_a_cell_receives_at_most_one_increment_per_scan() -> None:
     apply_scan(grid, MODEL, ORIGIN, endpoints, np.array([True, True, True]))
     touched = grid.log_odds != MODEL.l_prior
     increments = grid.log_odds[touched] - MODEL.l_prior
-    assert np.all(
-        np.isclose(increments, MODEL.l_free) | np.isclose(increments, MODEL.l_occupied)
-    )
+    assert np.all(np.isclose(increments, MODEL.l_free) | np.isclose(increments, MODEL.l_occupied))
 
 
 def test_an_occupied_claim_beats_a_free_claim_within_one_scan() -> None:

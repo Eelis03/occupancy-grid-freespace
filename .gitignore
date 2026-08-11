@@ -9,4 +9,7 @@ dist/
 build/
 *.egg-info/
 outputs/
+.coverage
+.coverage.*
+htmlcov/
 .DS_Store

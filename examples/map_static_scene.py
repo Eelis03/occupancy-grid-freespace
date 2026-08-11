@@ -36,8 +36,10 @@ def main() -> None:
     on_grid = score_grid(trace.grid, trace.truth, scenario.model)
 
     print(f"scenario: {trace.scenario}")
-    print(f"grid: {trace.grid.spec.rows} by {trace.grid.spec.cols} cells "
-          f"at {trace.grid.spec.resolution} m, extent {trace.grid.spec.extent}")
+    print(
+        f"grid: {trace.grid.spec.rows} by {trace.grid.spec.cols} cells "
+        f"at {trace.grid.spec.resolution} m, extent {trace.grid.spec.extent}"
+    )
     print(
         render_table(
             ["quantity", "value"],
@@ -78,8 +80,12 @@ def main() -> None:
     )
 
     if not args.no_figure:
-        path = plot_map(trace, scenario.model, args.outdir / "static_scene_map.png",
-                        title="Urban block, world fixed grid")
+        path = plot_map(
+            trace,
+            scenario.model,
+            args.outdir / "static_scene_map.png",
+            title="Urban block, world fixed grid",
+        )
         print(f"\nfigure: {path}")
 
 

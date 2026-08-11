@@ -17,9 +17,7 @@ def cells_of(traversal, ray: int = 0) -> list[tuple[int, int]]:
     """Return the cells visited by one ray, in traversal order."""
     start = int(traversal.offsets[ray])
     stop = int(traversal.offsets[ray + 1])
-    return [
-        (int(traversal.rows[i]), int(traversal.cols[i])) for i in range(start, stop)
-    ]
+    return [(int(traversal.rows[i]), int(traversal.cols[i])) for i in range(start, stop)]
 
 
 def test_hand_computed_shallow_ray() -> None:

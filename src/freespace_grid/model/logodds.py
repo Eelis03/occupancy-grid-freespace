@@ -175,6 +175,4 @@ class LogOddsModel:
     def at_clamp(self, log_odds: FloatArray, tolerance: float = 1e-9) -> FloatArray:
         """Mask of the entries that have reached either clamp."""
         values = np.asarray(log_odds, dtype=np.float64)
-        return np.asarray(
-            (values <= self.l_min + tolerance) | (values >= self.l_max - tolerance)
-        )
+        return np.asarray((values <= self.l_min + tolerance) | (values >= self.l_max - tolerance))
