@@ -103,9 +103,7 @@ def test_the_enclosed_room_interior_is_one_sealed_reachable_component() -> None:
     scenario = enclosed_room(steps=6)
     trace = run_mapping(scenario)
     pose = scenario.trajectory.poses[0]
-    report = measure_reachability(
-        trace.grid, trace.truth, scenario.model, (pose.x, pose.y)
-    )
+    report = measure_reachability(trace.grid, trace.truth, scenario.model, (pose.x, pose.y))
     assert report.components == 1
     assert report.reachable_fraction == 1.0
     assert report.stranded_cells == 0
